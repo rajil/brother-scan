@@ -4,6 +4,9 @@ import datetime
 import wand.image
 import glob
 import time
+import tempfile
+import shutil
+from pathlib import PurePath, Path
 
 def pnmtopdf(pnmfile, pdffile, resolution=None):
     with wand.image.Image(filename=pnmfile, resolution=resolution) as pnm:
@@ -33,47 +36,70 @@ def add_scan_options(cmd, options):
 def scanto(func, options):
     print('scanto %s %s'%(func, options))
     options = options.copy()
-    #if func == 'FILE':
+
+    dst = tempfile.mkdtemp()
     if not 'dir' in options:
         options['dir'] = '/tmp'
-    dst = options['dir']
+    consumedir = options['dir']
+
+    if not 'tmpdir' in options:
+        options['tmpdir'] = '/tmp/duplex'
+    tmpdir = options['tmpdir']
 
     os.makedirs(dst, exist_ok=True)
     now = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     adf = options.pop('adf', False)
+    duplex = options.pop('duplex', False)
+    if duplex:
+        os.makedirs(tmpdir, exist_ok=True)
 
     if adf:
-        cmd = ['scanadf',
-               '--output-file', os.path.join(dst, 'scan_%s_%%d.pnm'%(now))]
+        if not duplex:
+            cmd = ['scanadf',
+                   '--output-file', os.path.join(dst, 'scan_%s_%%d.pnm'%(now))]
+        else:
+            cmd = ['scanadf',
+                   '--output-file', os.path.join(tmpdir, 'scan_%s_%%d.pnm'%(now))]
         add_scan_options(cmd, options)
         print('# ' + ' '.join(cmd))
         subprocess.call(cmd)
         pnmfiles = []
         pdffiles = []
-        for pnmfile in glob.glob(os.path.join(dst, 'scan_%s_*.pnm'%(now))):
-            pdffile = '%s.pdf'%(pnmfile[:-4])
-            pnmtopdf(pnmfile, pdffile, options['resolution'])
-            pnmfiles.append(pnmfile)
-            pdffiles.append(pdffile)
-        if dst != '/output/duplex':
-            cmd = ['pdfunite'] + pdffiles + [os.path.join(dst, 'scan_%s.pdf'%(now))]
+
+        if not duplex:
+            for pnmfile in glob.glob(os.path.join(dst, 'scan_%s_*.pnm'%(now))):
+                pdffile = '%s.pdf'%(pnmfile[:-4])
+                pnmtopdf(pnmfile, pdffile, options['resolution'])
+                pnmfiles.append(pnmfile)
+                #pdffiles.append(pdffile)
+                pdffiles.insert(0,pdffile)
         else:
-            if os.path.exists(os.path.join(dst, 'odd.pdf')):
-                cmd = ['pdfunite'] + pdffiles + [os.path.join(dst, 'even.pdf')]
+            for pnmfile in glob.glob(os.path.join(tmpdir, 'scan_%s_*.pnm'%(now))):
+                pdffile = '%s.pdf'%(pnmfile[:-4])
+                pnmtopdf(pnmfile, pdffile, options['resolution'])
+                pnmfiles.append(pnmfile)
+                pdffiles.append(pdffile)
+
+        if not duplex:
+            cmd = ['pdfunite'] + pdffiles + [os.path.join(consumedir, 'scan_%s.pdf'%(now))]
+        else:
+            if os.path.exists(os.path.join(tmpdir, 'odd.pdf')):
+                cmd = ['pdfunite'] + pdffiles + [os.path.join(tmpdir, 'even.pdf')]
             else:
-                cmd = ['pdfunite'] + pdffiles + [os.path.join(dst, 'odd.pdf')]
+                cmd = ['pdfunite'] + pdffiles + [os.path.join(tmpdir, 'odd.pdf')]
 
         print('# ' + ' '.join(cmd))
         subprocess.call(cmd)
         time.sleep(3)
-        if dst == '/output/duplex':
-            if os.path.exists(os.path.join(dst, 'even.pdf')):
-                cmdS = 'pdftk A=' + os.path.join(dst, 'odd.pdf') + ' B=' + os.path.join(dst, 'even.pdf') + ' shuffle A Bend-1 output ' + os.path.join(dst, 'scan_%s.pdf'%(now))
+        if duplex:
+            if os.path.exists(os.path.join(tmpdir, 'even.pdf')):
+                cmdS = 'pdftk A=' + os.path.join(tmpdir, 'odd.pdf') + ' B=' + os.path.join(tmpdir, 'even.pdf') + ' shuffle Aend-1 B output ' + os.path.join(consumedir, 'scan_%s.pdf'%(now))
                 subprocess.call(cmdS, shell=True)
-                os.remove(os.path.join(dst, 'even.pdf'))
-                os.remove(os.path.join(dst, 'odd.pdf'))
+                os.remove(os.path.join(tmpdir, 'even.pdf'))
+                os.remove(os.path.join(tmpdir, 'odd.pdf'))
         for f in pdffiles:
             os.remove(f)
+        shutil.rmtree(dst)
     else:
         cmd = ['scanimage']
         add_scan_options(cmd, options)
@@ -82,6 +108,7 @@ def scanto(func, options):
             print('# ' + ' '.join(cmd))
             process = subprocess.Popen(cmd, stdout=pnm)
             process.wait()
-        pdffile = '%s.pdf'%(pnmfile[:-4])
+        pdffile = PurePath(consumedir, '%s.pdf'% (Path(pnmfile).name[:-4]))
         pnmtopdf(pnmfile, pdffile, options['resolution'])
         print('Wrote', pdffile)
+        shutil.rmtree(dst)
