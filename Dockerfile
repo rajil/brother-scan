@@ -1,4 +1,4 @@
-FROM python:3.9
+FROM python:3.9-bullseye
 ARG BRSCAN_DEB=brscan4-0.4.9-1.amd64.deb
 MAINTAINER Esben Haabendal, esben@haabendal.dk
 
