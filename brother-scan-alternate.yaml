@@ -1,0 +1,21 @@
+menu:
+  file:
+    Standard:
+      dir: /home/ubuntu/dockerdata/containers/paperless/consume
+      resolution: 300
+      width: 210
+      height: 297
+    ADF:
+      dir: /home/ubuntu/dockerdata/containers/paperless/consume
+      resolution: 300
+      width: 210
+      height: 297
+      adf: true
+    ADFDuplex:
+      dir: /home/ubuntu/dockerdata/containers/paperless/consume
+      tmpdir: /tmp/duplex
+      resolution: 300
+      width: 210
+      height: 297
+      adf: true
+      duplex: true
